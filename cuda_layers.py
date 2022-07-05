@@ -31,7 +31,7 @@ class Input_layer:
         self.c = c
         self.d = d
         self.impulse = torch.zeros(size).type(torch.FloatTensor)
-        self.fire = self.impulse
+        self.fire = self.impulse.clone()
 
         self.v = torch.ones(size).type(torch.FloatTensor) * self.c
         self.u = torch.ones(size).type(torch.FloatTensor) * b*self.v
@@ -109,13 +109,19 @@ class Input_layer:
         if self.update_weights == True:
             #DOES NOT WORK PROPERLY!!! REQUIRES REWORK!!!
             # or does...
+            # DOES NOT!!!
             if self.active_indices:
-                impulse_tensor = self.impulse[self.active_indices].repeat(len(self.next_layer)).reshape((len(self.active_indices), len(self.next_layer)))
+                #Check again how you reshape impulse tensor! --- SOLVED
+                # Still does not work :(
+                #impulse_tensor = self.impulse[self.active_indices].repeat(len(self.next_layer)).reshape((len(self.active_indices), len(self.next_layer)))
+                impulse_tensor = self.impulse[self.active_indices].repeat(len(self.next_layer)).reshape((len(self.next_layer), len(self.active_indices))).T
                 #print(impulse_tensor.shape, self.weights[self.active_indices,:].shape)
                 self.weights[self.active_indices] -= self.learning_rate * self.weights[self.active_indices,:] * impulse_tensor
             if self.next_layer.active_indices:
                 self.weights[:,self.next_layer.active_indices] = 1 - self.weights[:,self.next_layer.active_indices]
-                plus = self.learning_rate * self.assymetry * self.weights[:,self.next_layer.active_indices] * self.next_layer.impulse[self.next_layer.active_indices]
+                impulse_tensor = self.next_layer.impulse[self.next_layer.active_indices].repeat(self.size).reshape(self.size, len(self.next_layer.active_indices))
+                #plus = self.learning_rate * self.assymetry * self.weights[:,self.next_layer.active_indices] * self.next_layer.impulse[self.next_layer.active_indices]
+                plus = self.learning_rate * self.assymetry * self.weights[:,self.next_layer.active_indices] * impulse_tensor
                 self.weights[:,self.next_layer.active_indices] += plus
             '''
             if self.weights.max() >= 1 or self.weights.min() <=0:
@@ -131,9 +137,14 @@ class Input_layer:
                         self.weights[i,j] = 1 - .001
             '''
 
+
+    def loop_STDP(self):
+        pass
+
     def transmit_current(self):
         impulse, _ = self.behave()
-        self.next_layer.I += torch.matmul(self.weights.clone().T, impulse.reshape((self.size, 1))).reshape(self.next_layer.size) * self.g
+        #self.next_layer.I += torch.matmul(self.weights.clone().T, impulse.reshape((self.size, 1))).reshape(self.next_layer.size) * self.g
+        self.next_layer.I += torch.matmul(impulse.reshape((1, self.size)), self.weights.clone()).reshape(self.next_layer.size) * self.g
 
 
     def make_connections(self, layer):
@@ -145,9 +156,10 @@ class Input_layer:
 
     def behave(self):
         self.dynamics()
+        impulse = self.recovery()
         if self.next_layer:
             self.STDP()
-        impulse = self.recovery()
+        
         return impulse, self.v
 
 
